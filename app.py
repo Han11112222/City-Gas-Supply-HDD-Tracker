@@ -1,68 +1,96 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
 
 # 1. 페이지 설정
-st.set_page_config(page_title="DSE Demand Forecast: HDD Analyzer", layout="wide")
-st.title("🔥 DSE Demand Forecast: HDD Analyzer")
+st.set_page_config(page_title="DSE Demand Forecast: HDD & CDD Analyzer", layout="wide")
+st.title("🔥 DSE Demand Forecast: HDD & CDD Analyzer")
 
+# 2. 설명 박스
 st.info("""
-### 💡 난방도일(HDD, Heating Degree Days) 계산법
-난방도일은 실외 온도가 기준 온도보다 낮아질 때 에너지 소비가 발생하는 원리를 이용한 지수입니다.
-- **공식:** $HDD = \max(18.0 - \text{평균기온}, 0)$
-- **의미:** 기온이 18℃보다 낮을 때 그 차이만큼 HDD 값이 생성되며, 이 값이 클수록 난방 수요가 증가합니다. 18℃ 이상일 경우 HDD는 0이 됩니다.
+### 💡 도일(Degree Days) 및 예측 모델 안내
+- **HDD (난방도일):** $\max(18.0 - \\text{평균기온}, 0)$ | 추울수록 수치 증가
+- **CDD (냉방도일):** $\max(\\text{평균기온} - 26.0, 0)$ | 더울수록 수치 증가
+- **공급량 추정:** 설정한 학습 기간의 데이터를 바탕으로 HDD/CDD와 공급량 간의 상관관계를 분석하여 예측합니다.
 """)
 
-# 2. 핵심 최적화: 데이터 로드 및 '전처리 과정 전체'를 캐싱합니다.
+# 3. 데이터 로드 및 전처리 (속도 최적화)
 @st.cache_data
 def load_and_process_data():
     sheet_url = "https://docs.google.com/spreadsheets/d/13HrIz6OytYDykXeXzXJ02I6XbaKin1YaKBoO2kBd6Bs/export?format=csv&gid=0"
     raw_df = pd.read_csv(sheet_url)
     
     df = pd.DataFrame()
-    # 속도 개선 포인트: format='%Y-%m-%d' 추가로 날짜 추론 연산 시간 제거
     df['일자'] = pd.to_datetime(raw_df.iloc[:, 0], format='%Y-%m-%d', errors='coerce')
     df['공급량(MJ)'] = raw_df.iloc[:, 1].astype(str).str.replace(',', '').astype(float)
     df['평균기온'] = pd.to_numeric(raw_df.iloc[:, 3], errors='coerce')
     
-    # 데이터 필터링 (결측치 제거 및 2010년 이후)
-    df = df.dropna(subset=['일자', '평균기온'])
+    # 필터링 및 계산
+    df = df.dropna(subset=['일자', '평균기온', '공급량(MJ)'])
     df = df[df['일자'].dt.year >= 2010]
     
-    # HDD 및 단위 변환 일괄 계산
-    base_temp = 18.0
-    df['HDD'] = df['평균기온'].apply(lambda x: max(base_temp - x, 0) if pd.notnull(x) else 0)
+    df['HDD'] = df['평균기온'].apply(lambda x: max(18.0 - x, 0))
+    df['CDD'] = df['평균기온'].apply(lambda x: max(x - 26.0, 0))
     df['공급량(GJ)'] = (df['공급량(MJ)'] / 1000).round(1)
-    df['평균기온'] = df['평균기온'].round(1)
-    df['HDD'] = df['HDD'].round(1)
     
-    return df
+    return df.sort_values(by='일자')
 
 try:
-    # 이제 무거운 작업은 최초 1회만 실행되고, 이후에는 메모리에서 즉각 불러옵니다.
     df = load_and_process_data()
 
-    # 화면에 표시할 데이터프레임 복사 및 정렬 (최신순)
-    display_df = df[['일자', '공급량(GJ)', '평균기온', 'HDD']].sort_values(by='일자', ascending=False).copy()
-    display_df['일자'] = display_df['일자'].dt.strftime('%Y-%m-%d')
+    # 4. 공급량 추정 설정 섹션 (사이드바 또는 상단)
+    st.sidebar.header("⚙️ 공급량 추정 설정")
+    min_date = df['일자'].min().date()
+    max_date = df['일자'].max().date()
+    
+    train_range = st.sidebar.date_input("학습 기간 설정", [min_date, max_date])
+    predict_range = st.sidebar.date_input("예측 기간 설정", [min_date, max_date])
+    
+    estimate_btn = st.sidebar.button("🚀 공급량 추정 실행")
 
-    # 3. 표 출력 및 다운로드 버튼
-    st.subheader("📊 일별 상세 데이터 (2010년 이후, 최신순)")
+    # 5. 데이터 표 및 다운로드 (최신순)
+    st.subheader("📊 일별 상세 데이터 (최신순)")
+    display_df = df[['일자', '공급량(GJ)', '평균기온', 'HDD', 'CDD']].sort_values(by='일자', ascending=False).copy()
+    display_df['일자'] = display_df['일자'].dt.strftime('%Y-%m-%d')
     
     csv = display_df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 HDD 데이터 다운로드 (CSV)",
-        data=csv,
-        file_name="DSE_HDD_Data.csv",
-        mime="text/csv",
-    )
-    
+    st.download_button("📥 데이터 다운로드 (CSV)", data=csv, file_name="DSE_Energy_Data.csv", mime="text/csv")
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    # 4. 하단 동적 그래프 출력
-    st.subheader("📈 HDD 및 공급량 동적 추이")
-    st.write("마우스를 올려 값을 확인하거나 드래그하여 확대할 수 있습니다.")
-    chart_data = df.sort_values(by='일자').set_index('일자')[['HDD', '공급량(GJ)']]
+    # 6. 공급량 추정 결과 출력
+    if estimate_btn:
+        if len(train_range) == 2:
+            # 학습 데이터 준비
+            train_df = df[(df['일자'].dt.date >= train_range[0]) & (df['일자'].dt.date <= train_range[1])]
+            X_train = train_df[['HDD', 'CDD']]
+            y_train = train_df['공급량(GJ)']
+            
+            # 모델 학습 (선형 회귀)
+            model = LinearRegression()
+            model.fit(X_train, y_train)
+            
+            # 예측 데이터 준비
+            pred_df = df[(df['일자'].dt.date >= predict_range[0]) & (df['일자'].dt.date <= predict_range[1])].copy()
+            if not pred_df.empty:
+                X_pred = pred_df[['HDD', 'CDD']]
+                pred_df['예측공급량(GJ)'] = model.predict(X_pred).round(1)
+                
+                st.success(f"✅ 추정 완료! (학습 결정계수 $R^2$: {model.score(X_train, y_train):.3f})")
+                st.write(f"**추정된 기저부하:** {model.intercept_:.1f} GJ")
+                
+                # 예측 결과 표
+                st.subheader("📋 공급량 추정 결과")
+                res_display = pred_df[['일자', '공급량(GJ)', '예측공급량(GJ)']].sort_values(by='일자', ascending=False)
+                res_display['일자'] = res_display['일자'].dt.strftime('%Y-%m-%d')
+                st.dataframe(res_display, use_container_width=True, hide_index=True)
+            else:
+                st.warning("예측 기간에 해당하는 데이터가 없습니다.")
+
+    # 7. 하단 동적 그래프
+    st.subheader("📈 데이터 추이 그래프")
+    chart_data = df.set_index('일자')[['HDD', 'CDD', '공급량(GJ)']]
     st.line_chart(chart_data)
 
 except Exception as e:
-    st.error(f"데이터 처리 중 오류 발생: {e}")
+    st.error(f"오류 발생: {e}")
