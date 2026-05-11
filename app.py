@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
+import datetime
 
 # 1. 페이지 설정
 st.set_page_config(page_title="DSE Demand Forecast: HDD & CDD Analyzer", layout="wide")
@@ -10,8 +11,8 @@ st.title("🔥 DSE Demand Forecast: HDD & CDD Analyzer")
 # 2. 설명 박스
 st.info("""
 ### 💡 도일(Degree Days) 및 예측 모델 안내
-- **HDD (난방도일):** $\max(18.0 - \\text{평균기온}, 0)$ | 추울수록 수치 증가
-- **CDD (냉방도일):** $\max(\\text{평균기온} - 26.0, 0)$ | 더울수록 수치 증가
+- **HDD (난방도일):** $\\max(18.0 - \\text{평균기온}, 0)$ | 추울수록 수치 증가
+- **CDD (냉방도일):** $\\max(\\text{평균기온} - 26.0, 0)$ | 더울수록 수치 증가
 - **공급량 추정:** 설정한 학습 기간의 데이터를 바탕으로 HDD/CDD와 공급량 간의 상관관계를 분석하여 예측합니다.
 """)
 
@@ -39,13 +40,18 @@ def load_and_process_data():
 try:
     df = load_and_process_data()
 
-    # 4. 공급량 추정 설정 섹션 (사이드바 또는 상단)
+    # 4. 공급량 추정 설정 섹션 (사이드바)
     st.sidebar.header("⚙️ 공급량 추정 설정")
     min_date = df['일자'].min().date()
     max_date = df['일자'].max().date()
     
+    # 학습 기간 설정 (디폴트는 전체 기간)
     train_range = st.sidebar.date_input("학습 기간 설정", [min_date, max_date])
-    predict_range = st.sidebar.date_input("예측 기간 설정", [min_date, max_date])
+    
+    # [수정됨] 예측 기간 디폴트 값 2026.01.01 ~ 2026.12.31 적용
+    default_pred_start = datetime.date(2026, 1, 1)
+    default_pred_end = datetime.date(2026, 12, 31)
+    predict_range = st.sidebar.date_input("예측 기간 설정", [default_pred_start, default_pred_end])
     
     estimate_btn = st.sidebar.button("🚀 공급량 추정 실행")
 
@@ -60,7 +66,7 @@ try:
 
     # 6. 공급량 추정 결과 출력
     if estimate_btn:
-        if len(train_range) == 2:
+        if len(train_range) == 2 and len(predict_range) == 2:
             # 학습 데이터 준비
             train_df = df[(df['일자'].dt.date >= train_range[0]) & (df['일자'].dt.date <= train_range[1])]
             X_train = train_df[['HDD', 'CDD']]
@@ -85,7 +91,7 @@ try:
                 res_display['일자'] = res_display['일자'].dt.strftime('%Y-%m-%d')
                 st.dataframe(res_display, use_container_width=True, hide_index=True)
             else:
-                st.warning("예측 기간에 해당하는 데이터가 없습니다.")
+                st.warning("예측 기간에 해당하는 기상 데이터가 없습니다.")
 
     # 7. 하단 동적 그래프
     st.subheader("📈 데이터 추이 그래프")
