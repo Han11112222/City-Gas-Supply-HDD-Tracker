@@ -17,6 +17,7 @@ st.info("""
 @st.cache_data
 def load_data():
     # 제공해주신 raw 데이터 링크 (CSV 내보내기 형식)
+    sheet_url = "https://docs.google.com/spreadsheets/d/13HrIz6OytYDykXeXzXJ02I6XbaKin1 বাস্তবায়ित_설명_생략="
     sheet_url = "https://docs.google.com/spreadsheets/d/13HrIz6OytYDykXeXzXJ02I6XbaKin1YaKBoO2kBd6Bs/export?format=csv&gid=0"
     df = pd.read_csv(sheet_url)
     return df
@@ -30,8 +31,8 @@ try:
     df['공급량(MJ)'] = raw_df.iloc[:, 1].astype(str).str.replace(',', '').astype(float)
     df['평균기온'] = pd.to_numeric(raw_df.iloc[:, 3], errors='coerce')
     
-    # 2010년 이후 데이터 필터링
-    df = df.dropna(subset=['일자'])
+    # [수정됨] 2010년 이후 & 실제 '평균기온' 데이터가 존재하는 행만 필터링 (미래 날짜 None 방지)
+    df = df.dropna(subset=['일자', '평균기온'])
     df = df[df['일자'].dt.year >= 2010]
     
     # HDD 및 GJ 단위 변환 계산
@@ -41,17 +42,28 @@ try:
     df['평균기온'] = df['평균기온'].round(1)
     df['HDD'] = df['HDD'].round(1)
 
-    # 4. 표 출력 (최신순 정렬)
-    st.subheader("📊 일별 상세 데이터 (2010년 이후, 최신순)")
-    # 표에 표시할 데이터를 최신순으로 정렬
+    # 화면에 표시할 데이터프레임 복사 및 정렬 (최신순)
     display_df = df[['일자', '공급량(GJ)', '평균기온', 'HDD']].sort_values(by='일자', ascending=False).copy()
     display_df['일자'] = display_df['일자'].dt.strftime('%Y-%m-%d')
+
+    # 4. 표 출력 및 다운로드 버튼 (최신순 정렬)
+    st.subheader("📊 일별 상세 데이터 (2010년 이후, 최신순)")
+    
+    # [추가됨] CSV 다운로드 기능 (한글 깨짐 방지 인코딩 적용)
+    csv = display_df.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 HDD 데이터 다운로드 (CSV)",
+        data=csv,
+        file_name="DSE_HDD_Data.csv",
+        mime="text/csv",
+    )
+    
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     # 5. 하단 동적 그래프 출력
     st.subheader("📈 HDD 및 공급량 동적 추이")
     st.write("마우스를 올려 값을 확인하거나 드래그하여 확대할 수 있습니다.")
-    # 그래프 데이터 (시간 순서대로 표시하기 위해 필터링된 원본 df 사용)
+    # 그래프 데이터 (시간 순서대로 표시하기 위해 필터링된 원본 df 사용, 과거->최신)
     chart_data = df.sort_values(by='일자').set_index('일자')[['HDD', '공급량(GJ)']]
     st.line_chart(chart_data)
 
