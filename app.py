@@ -45,58 +45,84 @@ try:
     min_date = df['일자'].min().date()
     max_date = df['일자'].max().date()
     
-    # 학습 기간 설정 (디폴트는 전체 기간)
     train_range = st.sidebar.date_input("학습 기간 설정", [min_date, max_date])
     
-    # [수정됨] 예측 기간 디폴트 값 2026.01.01 ~ 2026.12.31 적용
     default_pred_start = datetime.date(2026, 1, 1)
     default_pred_end = datetime.date(2026, 12, 31)
     predict_range = st.sidebar.date_input("예측 기간 설정", [default_pred_start, default_pred_end])
     
     estimate_btn = st.sidebar.button("🚀 공급량 추정 실행")
 
-    # 5. 데이터 표 및 다운로드 (최신순)
-    st.subheader("📊 일별 상세 데이터 (최신순)")
+    # 5. 데이터 표 및 다운로드 (상단 - 최신순)
+    st.subheader("📊 일별 원본 상세 데이터 (최신순)")
     display_df = df[['일자', '공급량(GJ)', '평균기온', 'HDD', 'CDD']].sort_values(by='일자', ascending=False).copy()
     display_df['일자'] = display_df['일자'].dt.strftime('%Y-%m-%d')
     
-    csv = display_df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 데이터 다운로드 (CSV)", data=csv, file_name="DSE_Energy_Data.csv", mime="text/csv")
+    csv_raw = display_df.to_csv(index=False).encode('utf-8-sig')
+    st.download_button("📥 원본 데이터 다운로드 (CSV)", data=csv_raw, file_name="DSE_Raw_Data.csv", mime="text/csv")
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    # 6. 공급량 추정 결과 출력
+    # 6. 중간 동적 그래프
+    st.subheader("📈 데이터 추이 그래프")
+    chart_data = df.set_index('일자')[['HDD', 'CDD', '공급량(GJ)']]
+    st.line_chart(chart_data)
+
+    # 7. 최하단: 공급량 추정 결과 출력
     if estimate_btn:
         if len(train_range) == 2 and len(predict_range) == 2:
-            # 학습 데이터 준비
+            # 모델 학습
             train_df = df[(df['일자'].dt.date >= train_range[0]) & (df['일자'].dt.date <= train_range[1])]
             X_train = train_df[['HDD', 'CDD']]
             y_train = train_df['공급량(GJ)']
             
-            # 모델 학습 (선형 회귀)
             model = LinearRegression()
             model.fit(X_train, y_train)
             
-            # 예측 데이터 준비
+            # 예측 수행
             pred_df = df[(df['일자'].dt.date >= predict_range[0]) & (df['일자'].dt.date <= predict_range[1])].copy()
+            
             if not pred_df.empty:
+                st.divider()
+                st.subheader("📋 공급량 추정 결과 분석")
+                
                 X_pred = pred_df[['HDD', 'CDD']]
                 pred_df['예측공급량(GJ)'] = model.predict(X_pred).round(1)
                 
-                st.success(f"✅ 추정 완료! (학습 결정계수 $R^2$: {model.score(X_train, y_train):.3f})")
-                st.write(f"**추정된 기저부하:** {model.intercept_:.1f} GJ")
+                st.success(f"✅ 추정 완료! (학습 결정계수 $R^2$: {model.score(X_train, y_train):.3f} | 추정 기저부하: {model.intercept_:.1f} GJ)")
                 
-                # 예측 결과 표
-                st.subheader("📋 공급량 추정 결과")
-                res_display = pred_df[['일자', '공급량(GJ)', '예측공급량(GJ)']].sort_values(by='일자', ascending=False)
+                # 결과 테이블 가공 (날짜 오름차순: 최신이 하단으로)
+                res_display = pred_df[['일자', '공급량(GJ)', '예측공급량(GJ)']].sort_values(by='일자', ascending=True).copy()
+                
+                # 소계 계산
+                total_actual = res_display['공급량(GJ)'].sum()
+                total_pred = res_display['예측공급량(GJ)'].sum()
+                
+                # 소계 행 추가를 위해 문자열 날짜 변환
                 res_display['일자'] = res_display['일자'].dt.strftime('%Y-%m-%d')
-                st.dataframe(res_display, use_container_width=True, hide_index=True)
+                
+                # 소계 행 데이터 생성
+                subtotal_row = pd.DataFrame({
+                    '일자': ['[ 소계 ]'],
+                    '공급량(GJ)': [round(total_actual, 1)],
+                    '예측공급량(GJ)': [round(total_pred, 1)]
+                })
+                
+                # 소계 행을 하단에 결합
+                final_res_df = pd.concat([res_display, subtotal_row], ignore_index=True)
+                
+                # 결과 데이터 다운로드 버튼
+                csv_res = final_res_df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 추정 결과 다운로드 (CSV)",
+                    data=csv_res,
+                    file_name="DSE_Estimation_Results.csv",
+                    mime="text/csv",
+                )
+                
+                # 결과 표 출력
+                st.dataframe(final_res_df, use_container_width=True, hide_index=True)
             else:
-                st.warning("예측 기간에 해당하는 기상 데이터가 없습니다.")
-
-    # 7. 하단 동적 그래프
-    st.subheader("📈 데이터 추이 그래프")
-    chart_data = df.set_index('일자')[['HDD', 'CDD', '공급량(GJ)']]
-    st.line_chart(chart_data)
+                st.warning("예측 기간에 해당하는 기상 데이터가 구글 시트에 없습니다.")
 
 except Exception as e:
     st.error(f"오류 발생: {e}")
