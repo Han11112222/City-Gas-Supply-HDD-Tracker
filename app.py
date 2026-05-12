@@ -4,6 +4,8 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 import datetime
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # 1. 페이지 설정
 st.set_page_config(page_title="DSE Demand Forecast: HDD & CDD Analyzer", layout="wide")
@@ -94,8 +96,36 @@ try:
 
     # 2. 일별 원본 상세 데이터 (그래프)
     st.subheader("2. 일별 원본 상세 데이터 (그래프)")
-    chart_data_raw = historical_df.set_index('일자')[['HDD', 'CDD', '공급량(GJ)']]
-    st.line_chart(chart_data_raw)
+    
+    # [수정됨] 이중 Y축 적용을 위해 Plotly 라이브러리 활용
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    # 기본 Y축 (왼쪽): 공급량
+    fig.add_trace(
+        go.Scatter(x=historical_df['일자'], y=historical_df['공급량(GJ)'], name="공급량(GJ)", line=dict(color='#ff4b4b', width=2)),
+        secondary_y=False,
+    )
+    
+    # 보조 Y축 (오른쪽): HDD, CDD
+    fig.add_trace(
+        go.Scatter(x=historical_df['일자'], y=historical_df['HDD'], name="HDD", line=dict(color='#2b83ba', width=1.5)),
+        secondary_y=True,
+    )
+    fig.add_trace(
+        go.Scatter(x=historical_df['일자'], y=historical_df['CDD'], name="CDD", line=dict(color='#abdda4', width=1.5)),
+        secondary_y=True,
+    )
+    
+    fig.update_layout(
+        height=500,
+        margin=dict(l=0, r=0, t=30, b=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified" # 마우스 오버 시 세로줄 하나에 3개 데이터가 모두 뜨도록 설정
+    )
+    fig.update_yaxes(title_text="공급량 (GJ)", secondary_y=False)
+    fig.update_yaxes(title_text="도일 (HDD, CDD)", secondary_y=True, showgrid=False) # 오른쪽 그리드는 숨김
+    
+    st.plotly_chart(fig, use_container_width=True)
 
     if estimate_btn:
         if len(train_range) == 2 and len(predict_range) == 2:
