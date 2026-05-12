@@ -12,8 +12,8 @@ st.title("🔥 DSE Demand Forecast: HDD & CDD Analyzer")
 # 2. 설명 박스
 st.info("""
 ### 💡 도일(Degree Days) 및 예측 모델 안내
-- **HDD (난방도일):** $\\max(18.0 - \\text{평균기온}, 0)$ | 추울수록 수치 증가
-- **CDD (냉방도일):** $\\max(\\text{평균기온} - 26.0, 0)$ | 더울수록 수치 증가
+- **HDD (난방도일):** $\max(18.0 - \text{평균기온}, 0)$ | 추울수록 수치 증가
+- **CDD (냉방도일):** $\max(\text{평균기온} - 26.0, 0)$ | 더울수록 수치 증가
 - **공급량 추정:** 설정한 학습 기간의 데이터를 바탕으로 HDD/CDD와 공급량 간의 상관관계를 분석하여 예측합니다.
 """)
 
@@ -28,15 +28,21 @@ def load_and_process_data():
     df['공급량(MJ)'] = raw_df.iloc[:, 1].astype(str).str.replace(',', '').astype(float)
     df['평균기온'] = pd.to_numeric(raw_df.iloc[:, 3], errors='coerce')
     
-    # 필터링 및 계산 (미래 예측을 위해 공급량 결측치도 유지)
-    df = df.dropna(subset=['일자', '평균기온'])
+    # [오류 해결] 일자가 비어있는 행만 삭제합니다.
+    df = df.dropna(subset=['일자'])
     df = df[df['일자'].dt.year >= 2010]
+    
+    # [마법 추가] 미래 예측을 위해 기온 결측치가 있다면, 과거 동일 날짜(월-일)의 '평년 기온'으로 자동 대체합니다!
+    df['월일'] = df['일자'].dt.strftime('%m-%d')
+    df['평균기온'] = df['평균기온'].fillna(df.groupby('월일')['평균기온'].transform('mean'))
+    
+    df = df.dropna(subset=['평균기온']) # 혹시 평년 기온도 없는 극단적 결측치만 제거
     
     df['HDD'] = df['평균기온'].apply(lambda x: max(18.0 - x, 0))
     df['CDD'] = df['평균기온'].apply(lambda x: max(x - 26.0, 0))
     df['공급량(GJ)'] = (df['공급량(MJ)'] / 1000).round(1)
     
-    return df.sort_values(by='일자')
+    return df.sort_values(by='일자').drop(columns=['월일'])
 
 # 스타일링 함수 (천단위 콤마 및 소계 하이라이트)
 def style_df(df, key_col='일자'):
@@ -82,14 +88,16 @@ try:
             train_df = df[(df['일자'].dt.date >= train_range[0]) & (df['일자'].dt.date <= train_range[1])].dropna(subset=['공급량(GJ)'])
             y_train = train_df['공급량(GJ)']
             
-            # [HDD 모델]
+            # [HDD 모델] 및 R2 산출
             X_train_hdd = train_df[['HDD', 'CDD']]
             hdd_model = LinearRegression().fit(X_train_hdd, y_train)
+            r2_hdd = hdd_model.score(X_train_hdd, y_train)
             
-            # [3차 다항식 모델]
+            # [3차 다항식 모델] 및 R2 산출
             poly = PolynomialFeatures(degree=3)
             X_train_poly = poly.fit_transform(train_df[['평균기온']])
             poly_model = LinearRegression().fit(X_train_poly, y_train)
+            r2_poly = poly_model.score(X_train_poly, y_train)
             
             # ----------------- 예측 수행 -----------------
             full_pred_df = df[(df['일자'].dt.date >= predict_range[0]) & (df['일자'].dt.date <= predict_range[1])].copy()
@@ -140,8 +148,8 @@ try:
                 st.markdown("#### 📆 월별 분석 결과")
                 st.dataframe(style_df(res_monthly, '월'), use_container_width=True, hide_index=True)
                 
-                # 꺾은선 그래프 비교
-                st.markdown("#### 📈 모델별 공급량 추이 비교 (실적 포함)")
+                # [수정됨] 꺾은선 그래프 타이틀에 R2 값 명시
+                st.markdown(f"#### 📈 모델별 공급량 추이 비교 (실적 포함) | **$R^2$ (결정계수) - HDD: {r2_hdd:.3f} vs 3차 다항식: {r2_poly:.3f}**")
                 st.line_chart(analysis_df.set_index('일자')[['공급량(GJ)', 'HDD_예측 공급량(GJ)', '3차 다항식 예측 공급량(GJ)']])
             
             # 4. 공급량 예측 (미래 예측 전용)
