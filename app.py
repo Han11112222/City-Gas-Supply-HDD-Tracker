@@ -97,22 +97,24 @@ try:
     # 2. 일별 원본 상세 데이터 (그래프)
     st.subheader("2. 일별 원본 상세 데이터 (그래프)")
     
-    # [수정됨] 명시적인 체크박스 버튼 추가
-    col1, col2, col3 = st.columns([2, 2, 6])
+    # [수정됨] 공급량 켜기/끄기 체크박스를 가장 앞에 추가
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 4])
     with col1:
-        show_hdd = st.checkbox("❄️ HDD(난방도일) 켜기", value=False)
+        show_supply = st.checkbox("📊 공급량(GJ) 켜기", value=True)
     with col2:
+        show_hdd = st.checkbox("❄️ HDD(난방도일) 켜기", value=False)
+    with col3:
         show_cdd = st.checkbox("☀️ CDD(냉방도일) 켜기", value=False)
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # 기본 Y축 (왼쪽): 공급량 (항상 표시)
-    fig.add_trace(
-        go.Scatter(x=historical_df['일자'], y=historical_df['공급량(GJ)'], name="공급량(GJ)", line=dict(color='#ff4b4b', width=2)),
-        secondary_y=False,
-    )
+    # [수정됨] 체크박스 상태에 따라 공급량 선 표시 여부 결정
+    if show_supply:
+        fig.add_trace(
+            go.Scatter(x=historical_df['일자'], y=historical_df['공급량(GJ)'], name="공급량(GJ)", line=dict(color='#ff4b4b', width=2)),
+            secondary_y=False,
+        )
     
-    # [수정됨] 체크박스 상태에 따라 HDD, CDD 선을 그래프에 추가
     if show_hdd:
         fig.add_trace(
             go.Scatter(x=historical_df['일자'], y=historical_df['HDD'], name="HDD", line=dict(color='#2b83ba', width=1.5)),
