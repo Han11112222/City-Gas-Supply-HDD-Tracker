@@ -28,15 +28,15 @@ def load_and_process_data():
     df['공급량(MJ)'] = raw_df.iloc[:, 1].astype(str).str.replace(',', '').astype(float)
     df['평균기온'] = pd.to_numeric(raw_df.iloc[:, 3], errors='coerce')
     
-    # [오류 해결] 일자가 비어있는 행만 삭제합니다.
+    # 일자가 비어있는 행만 삭제합니다.
     df = df.dropna(subset=['일자'])
     df = df[df['일자'].dt.year >= 2010]
     
-    # [마법 추가] 미래 예측을 위해 기온 결측치가 있다면, 과거 동일 날짜(월-일)의 '평년 기온'으로 자동 대체합니다!
+    # 미래 예측을 위해 기온 결측치가 있다면, 과거 동일 날짜(월-일)의 '평년 기온'으로 자동 대체합니다
     df['월일'] = df['일자'].dt.strftime('%m-%d')
     df['평균기온'] = df['평균기온'].fillna(df.groupby('월일')['평균기온'].transform('mean'))
     
-    df = df.dropna(subset=['평균기온']) # 혹시 평년 기온도 없는 극단적 결측치만 제거
+    df = df.dropna(subset=['평균기온'])
     
     df['HDD'] = df['평균기온'].apply(lambda x: max(18.0 - x, 0))
     df['CDD'] = df['평균기온'].apply(lambda x: max(x - 26.0, 0))
@@ -145,18 +145,35 @@ try:
                 res_monthly['다항식_예측오차'] = res_monthly['3차 다항식 예측 공급량(GJ)'] - res_monthly['공급량(GJ)']
                 res_monthly['다항식_오차율(%)'] = (res_monthly['다항식_예측오차'] / res_monthly['공급량(GJ)']) * 100
                 
-                st.markdown("#### 📆 월별 분석 결과")
-                st.dataframe(style_df(res_monthly, '월'), use_container_width=True, hide_index=True)
+                # [수정됨] 월별 표 열 순서 일별과 동일하게 맞춤
+                m_cols = ['월', '공급량(GJ)', 'HDD_예측 공급량(GJ)', 'HDD_예측오차', 'HDD_오차율(%)', 
+                          '3차 다항식 예측 공급량(GJ)', '다항식_예측오차', '다항식_오차율(%)']
+                res_monthly = res_monthly[m_cols]
                 
-                # [수정됨] 꺾은선 그래프 타이틀에 R2 값 명시
+                # [수정됨] 3번 항목 월별 표에 소계 행 추가
+                m_total_row = pd.DataFrame({
+                    '월': ['[ 소계 ]'], '공급량(GJ)': [res_monthly['공급량(GJ)'].sum()],
+                    'HDD_예측 공급량(GJ)': [res_monthly['HDD_예측 공급량(GJ)'].sum()],
+                    'HDD_예측오차': [res_monthly['HDD_예측오차'].sum()],
+                    'HDD_오차율(%)': [(res_monthly['HDD_예측오차'].sum() / res_monthly['공급량(GJ)'].sum() * 100)],
+                    '3차 다항식 예측 공급량(GJ)': [res_monthly['3차 다항식 예측 공급량(GJ)'].sum()],
+                    '다항식_예측오차': [res_monthly['다항식_예측오차'].sum()],
+                    '다항식_오차율(%)': [(res_monthly['다항식_예측오차'].sum() / res_monthly['공급량(GJ)'].sum() * 100)]
+                })
+                
+                st.markdown("#### 📆 월별 분석 결과")
+                st.dataframe(style_df(pd.concat([res_monthly, m_total_row], ignore_index=True), '월'), use_container_width=True, hide_index=True)
+                
+                # 꺾은선 그래프 타이틀에 R2 값 명시
                 st.markdown(f"#### 📈 모델별 공급량 추이 비교 (실적 포함) | **$R^2$ (결정계수) - HDD: {r2_hdd:.3f} vs 3차 다항식: {r2_poly:.3f}**")
                 st.line_chart(analysis_df.set_index('일자')[['공급량(GJ)', 'HDD_예측 공급량(GJ)', '3차 다항식 예측 공급량(GJ)']])
             
-            # 4. 공급량 예측 (미래 예측 전용)
+            # 4. 공급량 예측 (전체 예측 기간 데이터 출력)
             st.divider()
             st.subheader("4. 공급량 예측 (Future Forecast)")
             
-            forecast_df = full_pred_df[full_pred_df['공급량(GJ)'].isna()].copy() # 실적이 없는 미래만
+            # [수정됨] 미래만 필터링하지 않고 사용자가 설정한 예측 기간 전체(full_pred_df)를 가져옵니다.
+            forecast_df = full_pred_df.copy()
             if not forecast_df.empty:
                 f_cols = ['일자', 'HDD_예측 공급량(GJ)', '3차 다항식 예측 공급량(GJ)']
                 res_f_daily = forecast_df[f_cols].sort_values(by='일자').copy()
@@ -174,14 +191,22 @@ try:
                 res_f_monthly = forecast_df.groupby('월').agg({
                     'HDD_예측 공급량(GJ)': 'sum', '3차 다항식 예측 공급량(GJ)': 'sum'
                 }).reset_index()
+                
+                # [수정됨] 4번 항목 월별 표에 소계 행 추가
+                f_m_total_row = pd.DataFrame({
+                    '월': ['[ 소계 ]'],
+                    'HDD_예측 공급량(GJ)': [res_f_monthly['HDD_예측 공급량(GJ)'].sum()],
+                    '3차 다항식 예측 공급량(GJ)': [res_f_monthly['3차 다항식 예측 공급량(GJ)'].sum()]
+                })
+                
                 st.markdown("#### 📆 월별 예측 합계")
-                st.dataframe(style_df(res_f_monthly, '월'), use_container_width=True, hide_index=True)
+                st.dataframe(style_df(pd.concat([res_f_monthly, f_m_total_row], ignore_index=True), '월'), use_container_width=True, hide_index=True)
                 
                 # 예측 그래프
-                st.markdown("#### 📈 모델별 미래 공급량 예측 추이")
+                st.markdown("#### 📈 모델별 공급량 예측 추이")
                 st.line_chart(forecast_df.set_index('일자')[['HDD_예측 공급량(GJ)', '3차 다항식 예측 공급량(GJ)']])
             else:
-                st.warning("선택하신 예측 기간 내에 실적이 없는 미래 날짜가 없습니다. 미래 공급량을 확인하려면 시트의 실적이 비어있는 기간을 선택해 주세요.")
+                st.warning("선택하신 예측 기간에 해당하는 데이터가 없습니다.")
 
 except Exception as e:
     st.error(f"오류 발생: {e}")
