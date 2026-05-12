@@ -71,15 +71,20 @@ try:
     
     estimate_btn = st.sidebar.button("🚀 공급량 추정 실행")
 
+    # -------------------------------------------------------------------
+    # [수정됨] 1번, 2번 섹션: 실제 공급량 실적이 있는 과거~현재 데이터만 필터링
+    historical_df = df.dropna(subset=['공급량(GJ)']).copy()
+    # -------------------------------------------------------------------
+
     # 1. 일별 원본 상세 데이터 (최신순)
     st.subheader("1. 일별 원본 상세 데이터 (최신순)")
-    display_df = df[['일자', '공급량(GJ)', '평균기온', 'HDD', 'CDD']].sort_values(by='일자', ascending=False).copy()
+    display_df = historical_df[['일자', '공급량(GJ)', '평균기온', 'HDD', 'CDD']].sort_values(by='일자', ascending=False).copy()
     display_df['일자'] = display_df['일자'].dt.strftime('%Y-%m-%d')
     st.dataframe(style_df(display_df), use_container_width=True, hide_index=True)
 
     # 2. 일별 원본 상세 데이터 (그래프)
     st.subheader("2. 일별 원본 상세 데이터 (그래프)")
-    chart_data_raw = df.set_index('일자')[['HDD', 'CDD', '공급량(GJ)']]
+    chart_data_raw = historical_df.set_index('일자')[['HDD', 'CDD', '공급량(GJ)']]
     st.line_chart(chart_data_raw)
 
     if estimate_btn:
@@ -145,12 +150,10 @@ try:
                 res_monthly['다항식_예측오차'] = res_monthly['3차 다항식 예측 공급량(GJ)'] - res_monthly['공급량(GJ)']
                 res_monthly['다항식_오차율(%)'] = (res_monthly['다항식_예측오차'] / res_monthly['공급량(GJ)']) * 100
                 
-                # [수정됨] 월별 표 열 순서 일별과 동일하게 맞춤
                 m_cols = ['월', '공급량(GJ)', 'HDD_예측 공급량(GJ)', 'HDD_예측오차', 'HDD_오차율(%)', 
                           '3차 다항식 예측 공급량(GJ)', '다항식_예측오차', '다항식_오차율(%)']
                 res_monthly = res_monthly[m_cols]
                 
-                # [수정됨] 3번 항목 월별 표에 소계 행 추가
                 m_total_row = pd.DataFrame({
                     '월': ['[ 소계 ]'], '공급량(GJ)': [res_monthly['공급량(GJ)'].sum()],
                     'HDD_예측 공급량(GJ)': [res_monthly['HDD_예측 공급량(GJ)'].sum()],
@@ -172,7 +175,6 @@ try:
             st.divider()
             st.subheader("4. 공급량 예측 (Future Forecast)")
             
-            # [수정됨] 미래만 필터링하지 않고 사용자가 설정한 예측 기간 전체(full_pred_df)를 가져옵니다.
             forecast_df = full_pred_df.copy()
             if not forecast_df.empty:
                 f_cols = ['일자', 'HDD_예측 공급량(GJ)', '3차 다항식 예측 공급량(GJ)']
@@ -192,7 +194,6 @@ try:
                     'HDD_예측 공급량(GJ)': 'sum', '3차 다항식 예측 공급량(GJ)': 'sum'
                 }).reset_index()
                 
-                # [수정됨] 4번 항목 월별 표에 소계 행 추가
                 f_m_total_row = pd.DataFrame({
                     '월': ['[ 소계 ]'],
                     'HDD_예측 공급량(GJ)': [res_f_monthly['HDD_예측 공급량(GJ)'].sum()],
