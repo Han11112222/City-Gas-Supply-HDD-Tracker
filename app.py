@@ -97,24 +97,32 @@ try:
     # 2. 일별 원본 상세 데이터 (그래프)
     st.subheader("2. 일별 원본 상세 데이터 (그래프)")
     
+    # [수정됨] 명시적인 체크박스 버튼 추가
+    col1, col2, col3 = st.columns([2, 2, 6])
+    with col1:
+        show_hdd = st.checkbox("❄️ HDD(난방도일) 켜기", value=False)
+    with col2:
+        show_cdd = st.checkbox("☀️ CDD(냉방도일) 켜기", value=False)
+    
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # [수정됨] 기본 Y축 (왼쪽): 공급량 (기본 활성화)
+    # 기본 Y축 (왼쪽): 공급량 (항상 표시)
     fig.add_trace(
-        go.Scatter(x=historical_df['일자'], y=historical_df['공급량(GJ)'], name="공급량(GJ)", line=dict(color='#ff4b4b', width=2), visible=True),
+        go.Scatter(x=historical_df['일자'], y=historical_df['공급량(GJ)'], name="공급량(GJ)", line=dict(color='#ff4b4b', width=2)),
         secondary_y=False,
     )
     
-    # [수정됨] 보조 Y축 (오른쪽): HDD (기본 숨김, 상단 범례 클릭 시 활성화)
-    fig.add_trace(
-        go.Scatter(x=historical_df['일자'], y=historical_df['HDD'], name="HDD", line=dict(color='#2b83ba', width=1.5), visible='legendonly'),
-        secondary_y=True,
-    )
-    # [수정됨] 보조 Y축 (오른쪽): CDD (기본 숨김, 상단 범례 클릭 시 활성화)
-    fig.add_trace(
-        go.Scatter(x=historical_df['일자'], y=historical_df['CDD'], name="CDD", line=dict(color='#abdda4', width=1.5), visible='legendonly'),
-        secondary_y=True,
-    )
+    # [수정됨] 체크박스 상태에 따라 HDD, CDD 선을 그래프에 추가
+    if show_hdd:
+        fig.add_trace(
+            go.Scatter(x=historical_df['일자'], y=historical_df['HDD'], name="HDD", line=dict(color='#2b83ba', width=1.5)),
+            secondary_y=True,
+        )
+    if show_cdd:
+        fig.add_trace(
+            go.Scatter(x=historical_df['일자'], y=historical_df['CDD'], name="CDD", line=dict(color='#abdda4', width=1.5)),
+            secondary_y=True,
+        )
     
     fig.update_layout(
         height=500,
