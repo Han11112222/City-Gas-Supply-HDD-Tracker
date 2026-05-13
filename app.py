@@ -88,6 +88,54 @@ try:
     historical_df = df.dropna(subset=['공급량(GJ)']).copy()
     # -------------------------------------------------------------------
 
+    # [추가됨] 기온별 공급량 그래프 (산점도 및 3차 다항식 곡선)
+    st.subheader("🌡️ 기온별 공급량 그래프 (3차 다항식 적합)")
+    if not historical_df.empty:
+        poly_viz = PolynomialFeatures(degree=3)
+        X_viz = historical_df[['평균기온']]
+        y_viz = historical_df['공급량(GJ)']
+        
+        # 모델 적합
+        model_viz = LinearRegression()
+        X_poly_viz = poly_viz.fit_transform(X_viz)
+        model_viz.fit(X_poly_viz, y_viz)
+        
+        # 매끄러운 곡선을 그리기 위해 기온의 최소~최대값을 100개 구간으로 나눔
+        x_range = np.linspace(X_viz['평균기온'].min(), X_viz['평균기온'].max(), 100).reshape(-1, 1)
+        x_range_poly = poly_viz.transform(pd.DataFrame(x_range, columns=['평균기온']))
+        y_range_pred = model_viz.predict(x_range_poly)
+        
+        fig_scatter = go.Figure()
+        
+        # 1. 실제 데이터 산점도 (주황색)
+        fig_scatter.add_trace(go.Scatter(
+            x=historical_df['평균기온'], 
+            y=historical_df['공급량(GJ)'], 
+            mode='markers',
+            name='학습 데이터 (실적)',
+            marker=dict(color='orange', size=5, opacity=0.7)
+        ))
+        
+        # 2. 3차 다항식 적합 곡선 (초록색)
+        fig_scatter.add_trace(go.Scatter(
+            x=x_range.flatten(), 
+            y=y_range_pred, 
+            mode='lines',
+            name='3차 다항식 적합 곡선',
+            line=dict(color='green', width=3)
+        ))
+        
+        fig_scatter.update_layout(
+            height=450,
+            xaxis_title="평균기온 (℃)",
+            yaxis_title="공급량 (GJ)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=0, r=0, t=30, b=0),
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+
     # 1. 일별 원본 상세 데이터 (최신순)
     st.subheader("1. 일별 원본 상세 데이터 (최신순)")
     display_df = historical_df[['일자', '공급량(GJ)', '평균기온', 'HDD', 'CDD']].sort_values(by='일자', ascending=False).copy()
@@ -97,7 +145,7 @@ try:
     # 2. 일별 원본 상세 데이터 (그래프)
     st.subheader("2. 일별 원본 상세 데이터 (그래프)")
     
-    # [수정됨] 공급량 켜기/끄기 체크박스를 가장 앞에 추가
+    # 공급량 켜기/끄기 체크박스를 가장 앞에 추가
     col1, col2, col3, col4 = st.columns([2, 2, 2, 4])
     with col1:
         show_supply = st.checkbox("📊 공급량(GJ) 켜기", value=True)
@@ -108,7 +156,7 @@ try:
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # [수정됨] 체크박스 상태에 따라 공급량 선 표시 여부 결정
+    # 체크박스 상태에 따라 공급량 선 표시 여부 결정
     if show_supply:
         fig.add_trace(
             go.Scatter(x=historical_df['일자'], y=historical_df['공급량(GJ)'], name="공급량(GJ)", line=dict(color='#ff4b4b', width=2)),
